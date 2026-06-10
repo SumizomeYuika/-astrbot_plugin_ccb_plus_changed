@@ -56,11 +56,11 @@ class ccb(Star):
         self.action_times = {}
         self.ban_list = {}
         self.yw_prob = config.get("yw_probability")               # 触发概率
-        self.white_list  = config.get("white_list")
+        self.white_list = config.get("white_list") or []
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
         self.crit_prob  =   self.config.get("crit_prob")
         self.is_log =   self.config.get("is_log")           # 完整日志，默认为false
-        self.block_list = config.get("block_list", [])      # 单向屏蔽列表：防止特定用户ccb我
+        self.block_list = config.get("block_list") or []    # 单向屏蔽列表：防止特定用户ccb我
 
     #  from issue 6
     async def _is_admin(self, event: AstrMessageEvent) -> bool:
@@ -249,7 +249,7 @@ class ccb(Star):
             yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
             return
 
-        # 检查单向屏蔽列表
+        # 检查单向屏蔽列表：目标在屏蔽列表中，则不能ccb目标
         if target_user_id in self.block_list:
             stranger_info = await event.bot.api.call_action(
                 'get_stranger_info', user_id=target_user_id
@@ -258,21 +258,17 @@ class ccb(Star):
             yield event.plain_result(f"{nickname} 在你的ccb屏蔽列表中，不能ccbta")
             return
 
+        # 自ccb逻辑（当self.selfdo=False时执行打胶）
         if target_user_id == actor_id and not self.selfdo:
-            if len(times) > self.threshold:
+            timep = round(random.uniform(1, 600), 2)
+            V = round(random.uniform(0.01,100), 2)
+            a = time_long(timep)
+            b = volume(V)
+            user_name = event.get_sender_name()
+            yield event.plain_result(f"Hello, {user_name}, 你坚持了{timep}s哦，{a}.射出{V}ml,{b}!")
+            if random.random() < self.yw_prob:
                 self.ban_list[actor_id] = now + self.ban_duration
-                times.clear()
-                yield event.plain_result("冲得出来吗你就冲，再冲就给你折了")
-            else:
-                timep = round(random.uniform(1, 600), 2)
-                V = round(random.uniform(0.01,100), 2)
-                a = time_long(timep)
-                b = volume(V)
-                user_name = event.get_sender_name()
-                yield event.plain_result(f"Hello, {user_name}, 你坚持了{timep}s哦，{a}.射出{V}ml,{b}!") 
-                if random.random() < self.yw_prob:
-                    self.ban_list[actor_id] = now + self.ban_duration
-                    yield event.plain_result("💥你鹿炸膛了，萎")
+                yield event.plain_result("💥你鹿炸膛了，萎")
             return
 
 
@@ -729,7 +725,6 @@ class ccb(Star):
         用法：ccbblock [@目标]
         """
         target_user_id = self._get_target_user_id(event)
-        sender_id = str(event.get_sender_id())
 
         if target_user_id in self.block_list:
             self.block_list = [uid for uid in self.block_list if uid != target_user_id]
