@@ -25,6 +25,8 @@ HELP_INFO = """
 /打胶 没有什么特别的，独立出来的打胶功能
 /ccbclear   管理员指令：清除某人的所有 CCB 记录，用法：ccbclear [@目标]
 /ccbnodo  管理员指令：切换目标防被 CCB 状态，用法：ccbnodo [@目标]
+/ccbblock  用户指令：阻止某用户ccb你（单向），用法：ccbblock [@目标]
+/ccbblocklist 查看自己的ccb屏蔽列表
 
 根据配置文件可调控炸膛的概率
 
@@ -58,6 +60,7 @@ class ccb(Star):
         self.selfdo = self.config.get("self_ccb", False)         # 0721 默认为否
         self.crit_prob  =   self.config.get("crit_prob")
         self.is_log =   self.config.get("is_log")           # 完整日志，默认为false
+        self.block_list = config.get("block_list", [])      # 单向屏蔽列表：防止特定用户ccb我
 
     #  from issue 6
     async def _is_admin(self, event: AstrMessageEvent) -> bool:
@@ -74,6 +77,15 @@ class ccb(Star):
                 save_fn()
         except Exception as e:
             logger.warning(f"保存白名单失败: {e}")
+
+    def _save_block_list(self):
+        try:
+            self.config["block_list"] = self.block_list
+            save_fn = getattr(self.config, "save", None)
+            if callable(save_fn):
+                save_fn()
+        except Exception as e:
+            logger.warning(f"保存单向屏蔽列表失败: {e}")
 
     async def _get_nickname(self, event: AstrMessageEvent, user_id: str, strict_event: bool = False) -> str:
         nickname = user_id
@@ -235,6 +247,15 @@ class ccb(Star):
             )
             nickname = stranger_info.get("nick", target_user_id)
             yield event.plain_result(f"{nickname} 的后门被后户之神霸占了，不能ccb（悲")
+            return
+
+        # 检查单向屏蔽列表
+        if target_user_id in self.block_list:
+            stranger_info = await event.bot.api.call_action(
+                'get_stranger_info', user_id=target_user_id
+            )
+            nickname = stranger_info.get("nick", target_user_id)
+            yield event.plain_result(f"{nickname} 在你的ccb屏蔽列表中，不能ccbta")
             return
 
         if target_user_id == actor_id and not self.selfdo:
@@ -700,7 +721,40 @@ class ccb(Star):
             self.white_list.append(target_user_id)
             self._save_white_list()
             yield event.plain_result(f"已将 {target_user_id} 加入防CCB保护名单")
-    
+
+    @filter.command("ccbblock")
+    async def ccbblock(self, event: AstrMessageEvent):
+        """
+        用户指令：阻止特定用户ccb我
+        用法：ccbblock [@目标]
+        """
+        target_user_id = self._get_target_user_id(event)
+        sender_id = str(event.get_sender_id())
+
+        if target_user_id in self.block_list:
+            self.block_list = [uid for uid in self.block_list if uid != target_user_id]
+            self._save_block_list()
+            yield event.plain_result(f"已解除对 {target_user_id} 的ccb限制")
+        else:
+            self.block_list.append(target_user_id)
+            self._save_block_list()
+            yield event.plain_result(f"已阻止 {target_user_id} ccb你")
+
+    @filter.command("ccbblocklist")
+    async def ccbblocklist(self, event: AstrMessageEvent):
+        """
+        查看自己的ccb屏蔽列表
+        用法：ccbblocklist
+        """
+        if not self.block_list:
+            yield event.plain_result("你的ccb屏蔽列表为空")
+            return
+        msg = "你的ccb屏蔽列表：\n"
+        for uid in self.block_list:
+            nick = await self._get_nickname(event, uid, strict_event=True)
+            msg += f"- {nick} ({uid})\n"
+        yield event.plain_result(msg.strip())
+
     @filter.command("打胶")
     async def dajiao(self, event: AstrMessageEvent):
         """
